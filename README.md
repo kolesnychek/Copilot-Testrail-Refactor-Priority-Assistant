@@ -1,4 +1,4 @@
-#Copilot TestRail Refactor & Priority Assistant
+**Copilot TestRail Refactor & Priority Assistant**
 
 Пайплайн для TestRail:
 1. бере кейси з секції,

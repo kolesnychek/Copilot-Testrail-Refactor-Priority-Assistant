@@ -1,6 +1,6 @@
 Copilot TestRail Refactor & Priority Assistant
 
-Простий пайплайн для TestRail:
+Пайплайн для TestRail:
 1. бере кейси з секції,
 2. нормалізує/рефакторить текст,
 3. перевіряє пріоритети за Jira story + acceptance criteria,

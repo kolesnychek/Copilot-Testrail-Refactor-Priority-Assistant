@@ -8,7 +8,7 @@ TestRail Pipeline:
 4. Creates updated test cases
 5. Writes reports to the `output/` directory
 
-Main entry file: `Copilot-AI-TestRail.py`.
+Main file: `Copilot-AI-TestRail.py`.
 
 
 Requirements:

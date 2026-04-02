@@ -1,7 +1,6 @@
 ## Copilot TestRail Refactor & Priority Assistant
 
-
-TestRail Pipeline:
+## TestRail Pipeline:
 1. Fetches test cases from a section
 2. Normalizes/refactors the text
 3. Validates priorities based on Jira story + acceptance criteria
@@ -10,8 +9,7 @@ TestRail Pipeline:
 
 Main file: `Copilot-AI-TestRail.py`.
 
-
-Requirements:
+## Requirements:
 1. Installed `Python 3.12+`
 2. Installed packages:
    - `aiohttp`
@@ -24,10 +22,9 @@ Requirements:
    - valid Jira API access
    - valid GitHub Models API / Copilot Models access
 
+## Steps to run the project locally:
 
-Steps to run the project locally:
-
-1. **Install Python 3.12+**  
+1. **Check Python 3.12+**  
    Check in terminal:
    ```
    python3 --version

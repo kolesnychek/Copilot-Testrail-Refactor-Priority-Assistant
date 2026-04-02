@@ -6,7 +6,7 @@ TestRail Pipeline:
 2. Normalizes/refactors the text
 3. Validates priorities based on Jira story + acceptance criteria
 4. Creates updated test cases
-5. Writes reports to the 'output/' directory
+5. Writes reports to the `output/` directory
 
 Main entry file: `Copilot-AI-TestRail.py`.
 

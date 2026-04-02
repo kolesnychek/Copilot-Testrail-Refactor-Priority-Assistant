@@ -1,59 +1,61 @@
-**Copilot TestRail Refactor & Priority Assistant**
+## Copilot TestRail Refactor & Priority Assistant
 
-Пайплайн для TestRail:
-1. бере кейси з секції,
-2. нормалізує/рефакторить текст,
-3. перевіряє пріоритети за Jira story + acceptance criteria,
-4. створює оновлені кейси,
-5. пише звіти в `output/`.
 
-Головний файл запуску: `Copilot-AI-TestRail.py`.
+TestRail Pipeline:
+1. Fetches test cases from a section
+2. Normalizes/refactors the text
+3. Validates priorities based on Jira story + acceptance criteria
+4. Creates updated test cases
+5. Writes reports to the 'output/' directory
 
-Що потрібно:
-1. Встановлений `Python 3.12+`
-2. Встановлені пакети:
+Main entry file: `Copilot-AI-TestRail.py`.
+
+
+Requirements:
+1. Installed `Python 3.12+`
+2. Installed packages:
    - `aiohttp`
    - `python-dotenv`
    - `pydantic`
    - `tenacity`
-3. Заповнений файл `.env` ()
-4. Доступи:
-   - валідний доступ до TestRail API 
-   - валідний доступ до Jira API 
-   - валідний доступ до GitHub Models API / Copilot Models
+3. Configured `.env` file
+4. Access:
+   - valid TestRail API access
+   - valid Jira API access
+   - valid GitHub Models API / Copilot Models access
 
 
-Кроки для локального розгортання проєкту:   
+Steps to run the project locally:
 
-1. **Встановіть Python 3.12+**  
-   Перевірте у терміналі:
+1. **Install Python 3.12+**  
+   Check in terminal:
    ```
    python3 --version
    ```
 
-2. **Клонувати репозиторій**
+2. **Clone the repository**
    ```
-   git clone <URL_вашого_репозиторію>
-   cd <назва_папки>
+   git clone <YOUR_REPOSITORY_URL>
+   cd <PROJECT_FOLDER_NAME>
    ```
 
-3. **Створіть та активуйте віртуальне середовище**
+3. **Create and activate a virtual environment**
    ```
    python3 -m venv venv
    source venv/bin/activate
    ```
 
-4. **Встановіть залежності вручну**  
+4. **Install dependencies manually**  
    ```
    pip install aiohttp python-dotenv pydantic tenacity
    ```
 
-5. **Створіть `.env`:**
+5. **Create `.env` file:**
    ```
    cp .env.example .env
    ```
 
-6. **Заповніть .env**
+6. **Fill in `.env` file**
    ```
    TESTRAIL_URL=
    TESTRAIL_EMAIL=
@@ -69,7 +71,7 @@
    JIRA_API_TOKEN=
    ```
 
-7. **Запустіть скрипт**
+7. **Run the script**
    ```
    python3 Copilot-AI-TestRail.py
    ```   

@@ -49,7 +49,7 @@ Main file: `Copilot-AI-TestRail.py`.
 
 5. **Create `.env` file:**
    ```
-   cp .env.example .env
+   cp env.example .env
    ```
 
 6. **Fill in `.env` file**

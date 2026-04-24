@@ -57,6 +57,7 @@ SECTION_ID = int(os.getenv("TESTRAIL_SECTION_ID"))
 REQUIRE_MANUAL_APPROVAL = os.getenv("REQUIRE_MANUAL_APPROVAL", "yes").lower() in {"1", "true", "yes", "y"}
 USE_ALL_CASES_IN_SECTION = os.getenv("USE_ALL_CASES_IN_SECTION", "no").lower() in {"1", "true", "yes", "y"}
 CREATE_IN_TESTRAIL = os.getenv("CREATE_IN_TESTRAIL", "yes").lower() in {"1", "true", "yes", "y"}
+USE_LOCAL_REFACTOR_ONLY = os.getenv("USE_LOCAL_REFACTOR_ONLY", "no").lower() in {"1", "true", "yes", "y"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR_RAW = os.getenv("OUTPUT_DIR", "./output").strip()
 OUTPUT_DIR = OUTPUT_DIR_RAW if os.path.isabs(OUTPUT_DIR_RAW) else os.path.join(SCRIPT_DIR, OUTPUT_DIR_RAW)
@@ -73,6 +74,30 @@ JIRA_BEARER_TOKEN = os.getenv("JIRA_BEARER_TOKEN", "").strip()
 _JIRA_ACCEPTANCE_FIELD_IDS: list[str] | None = None
 _JIRA_ACCEPTANCE_FIELDS_META: list[dict] | None = None
 
+LLM_BACKEND = os.getenv("LLM_BACKEND", "").strip().lower()
+GITHUB_MODELS_TOKEN = os.getenv("GITHUB_MODELS_TOKEN", "").strip()
+GITHUB_MODELS_MODEL = os.getenv("GITHUB_MODELS_MODEL", "").strip()
+LLM_ENABLED = False
+_LLM_DISABLED_REASON = ""
+
+if LLM_BACKEND and LLM_BACKEND != "github_models":
+    raise ValueError("LLM_BACKEND must be 'github_models' when set.")
+
+if LLM_BACKEND == "github_models":
+    missing_llm_vars = []
+    if not GITHUB_MODELS_TOKEN:
+        missing_llm_vars.append("GITHUB_MODELS_TOKEN")
+    if not GITHUB_MODELS_MODEL:
+        missing_llm_vars.append("GITHUB_MODELS_MODEL")
+    if missing_llm_vars:
+        _LLM_DISABLED_REASON = (
+            "LLM backend configured but missing "
+            + ", ".join(missing_llm_vars)
+            + "; using local refactor fallback"
+        )
+    else:
+        LLM_ENABLED = True
+
 PRIORITY_ID_LOW = int(os.getenv("PRIORITY_ID_LOW", "1"))
 PRIORITY_ID_MEDIUM = int(os.getenv("PRIORITY_ID_MEDIUM", "2"))
 PRIORITY_ID_HIGH = int(os.getenv("PRIORITY_ID_HIGH", "3"))
@@ -88,12 +113,24 @@ def log(message: str):
         print(message)
 
 
-log("Config loaded OK")
+if _LLM_DISABLED_REASON:
+    log(f"[REFAC][LLM] {_LLM_DISABLED_REASON}")
+
+if LLM_ENABLED:
+    log("Config loaded OK (LLM enabled)")
+else:
+    log("Config loaded OK (LLM disabled, local fallback)")
 logger = logging.getLogger(__name__)
 _llm_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:
+    if not LLM_ENABLED:
+        raise RuntimeError(
+            "LLM integration is disabled. To enable it, set "
+            "LLM_BACKEND=github_models, GITHUB_MODELS_TOKEN, and GITHUB_MODELS_MODEL."
+        )
+
     global _llm_client
     if _llm_client is None:
         _llm_client = LLMClient()
@@ -1217,6 +1254,9 @@ def refactor_case_locally(raw_case: dict) -> dict:
 
 
 async def refactor_case_with_agent(raw_case: dict) -> dict:
+    if USE_LOCAL_REFACTOR_ONLY:
+        return refactor_case_locally(raw_case)
+
     prompt_payload = {
         "task": "Refactor this TestRail case and return strict JSON only.",
         "rules": REFACTOR_RULES_TEXT,
@@ -1232,8 +1272,8 @@ async def refactor_case_with_agent(raw_case: dict) -> dict:
         },
     }
 
-    llm_client = get_llm_client()
     try:
+        llm_client = get_llm_client()
         response_text = await llm_client.complete(
             json.dumps(prompt_payload, ensure_ascii=False, indent=2)
         )

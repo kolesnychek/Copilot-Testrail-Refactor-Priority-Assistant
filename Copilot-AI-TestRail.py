@@ -70,9 +70,12 @@ COPY_SOURCE_PRIORITY = os.getenv("COPY_SOURCE_PRIORITY", "yes").lower() in {"1",
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "").strip().rstrip("/")
 JIRA_USER_EMAIL = os.getenv("JIRA_USER_EMAIL", "").strip()
 JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "").strip()
+FORCE_REFACTORED_TEMPLATE_STEPS_SEPARATED = os.getenv("FORCE_REFACTORED_TEMPLATE_STEPS_SEPARATED", os.getenv("FORCE_REFACTORED_TEMPLATE_STEPS", "yes")).lower() in {"1", "true", "yes", "y"}
+TESTRAIL_STEPS_SEPARATED_TEMPLATE_ID_RAW = os.getenv("TESTRAIL_STEPS_SEPARATED_TEMPLATE_ID", os.getenv("TESTRAIL_STEPS_TEMPLATE_ID", "")).strip()
 JIRA_BEARER_TOKEN = os.getenv("JIRA_BEARER_TOKEN", "").strip()
 _JIRA_ACCEPTANCE_FIELD_IDS: list[str] | None = None
 _JIRA_ACCEPTANCE_FIELDS_META: list[dict] | None = None
+_CACHED_STEPS_SEPARATED_TEMPLATE_ID: int | None = None
 
 LLM_BACKEND = os.getenv("LLM_BACKEND", "").strip().lower()
 GITHUB_MODELS_TOKEN = os.getenv("GITHUB_MODELS_TOKEN", "").strip()
@@ -390,6 +393,10 @@ def choose_link_anchor(prefix: str) -> tuple[str | None, int | None]:
     last_word = last.group(0)
     last_start = last.start()
 
+    # Keep QA environment links anchored only on "environment", not "QA environment".
+    if last_word.lower() == "environment":
+        return last_word, last_start
+
     # Prefer meaningful in-text anchors (e.g. "here", "VI user") instead of generic "Link".
     if last_word.lower() == "link" and len(token_matches) >= 2:
         prev = token_matches[-2]
@@ -663,11 +670,12 @@ def is_action_oriented_step(text: str) -> bool:
 
 def normalize_step_action(action: str) -> str:
     cleaned_action = re.sub(
-        r"(?i)^\s*as\s+(vi|du|hu|video interpreter|deaf user|hearing user)(\s*\([^)]+\))?\s*[,:\-]?\s*",
+        r"(?i)^\s*as\s+(?:a\s+)?user(\s*\([^)]+\))?\s*[,:\-]?\s*",
         "",
         action or "",
     )
-    cleaned_action = re.sub(r"(?i)^\s*(vi|du|hu)(\s*\([^)]+\))?\s*[,:\-]\s*", "", cleaned_action)
+    cleaned_action = re.sub(r"(?i)^\s*(the\s+user)(\s*\([^)]+\))?\s*[,:\-]\s*", "", cleaned_action)
+    cleaned_action = strip_leading_connector(cleaned_action)
     text = normalize_text_with_links(cleaned_action, expand_roles=False)
     text = strip_html_markup(text)
 
@@ -681,7 +689,7 @@ def normalize_step_action(action: str) -> str:
     text = bold_control_labels(text)
     text = place_images_on_new_line(text)
     text = re.sub(r"->\s*([A-ZА-ЯІЇЄ])", lambda m: "-> " + m.group(1).lower(), text)
-    text = re.sub(r"(?i)^\s*(user|vi|du|hu)\s+(should\s+)?", "", text)
+    text = re.sub(r"(?i)^\s*(user)\s+(should\s+)?", "", text)
     text = re.sub(r"(?i)^\s*(the\s+user)\s+(should\s+)?", "", text)
     text = re.sub(r"(?i)^\s*(need|needs)\s+to\s+", "", text)
     text = re.sub(r"(?i)^\s*(make sure|ensure that)\s+", "Ensure ", text)
@@ -703,6 +711,7 @@ def normalize_step_action(action: str) -> str:
 def normalize_expected_result_text(expected: str) -> str:
     # Expand role abbreviations only in expected results.
     text = normalize_text_with_links(expected, expand_roles=True)
+    text = "\n".join(strip_leading_connector(line) for line in text.splitlines())
     text = strip_html_markup(text)
     text = bold_ui_elements(text)
     text = bold_quoted_ui_labels(text)
@@ -731,6 +740,7 @@ def normalize_expected_result_text(expected: str) -> str:
     text = re.sub(r"(?i)^system\s+", "", text)
     text = re.sub(r"(?i)^check that:\s*", "Check that:\n", text)
     text = re.sub(r"(?i)^shows?\s+that\s+user\s+sees", "User sees", text)
+    text = re.sub(r"(?i)\b(vi|du|hu)\b", lambda m: m.group(1).upper(), text)
     # Split inline enumerations like "...account2. DU..." into readable list lines.
     text = re.sub(r"(?<!^)\s+(\d+\.)\s*", r"\n\1 ", text)
     text = re.sub(r"(?<!^)\s+(\d+\))\s*", r"\n  \1 ", text)
@@ -1178,6 +1188,61 @@ def convert_html_images_to_markdown(text: str) -> str:
     return out
 
 
+def strip_leading_connector(text: str) -> str:
+    out = safe_str(text)
+    out = re.sub(r"(?i)^\s*(and|then)\s+", "", out)
+    return out.strip()
+
+
+def looks_like_action_line(text: str) -> bool:
+    if looks_like_expected_line(text):
+        return False
+    return bool(re.search(r"(?i)\b(place|call|calls|click|clicks|tap|taps|press|presses|open|opens|select|selects|choose|chooses|enter|enters|dial|dials|type|types|request|requests|join|joins)\b", safe_str(text)))
+
+
+def looks_like_expected_line(text: str) -> bool:
+    low = safe_str(text).lower()
+    if not low:
+        return False
+    expected_terms = [
+        "answers", "answered", "watch radar", "when the call is answered", "is hidden", "is shown", "is displayed", "sees", "can see", "cannot", "can't", "working", "works", "hear everybody", "can hear",
+    ]
+    return any(term in low for term in expected_terms)
+
+
+def format_tail_expected_block(lines: list[str]) -> str:
+    def is_media_only_line(value: str) -> bool:
+        token = safe_str(value)
+        if not token:
+            return False
+        if re.fullmatch(r"(?i)(фото|photo|image)\b\.?", token):
+            return True
+        return re.fullmatch(r"!\[[^\]]*\]\(([^)]+)\)", token) is not None
+
+    cleaned: list[str] = []
+    for raw in lines:
+        line = strip_leading_connector(raw).strip().rstrip(" ,;")
+        if line:
+            cleaned.append(line)
+    if not cleaned:
+        return ""
+
+    normalized: list[str] = []
+    item_idx = 1
+    for line in cleaned:
+        if is_media_only_line(line):
+            normalized.append(line)
+            continue
+        if re.match(r"^\d+[.)]\s+", line):
+            normalized.append(re.sub(r"^\d+[.)]\s+", f"{item_idx}. ", line))
+        else:
+            line = line[0].upper() + line[1:] if len(line) > 1 else line.upper()
+            normalized.append(f"{item_idx}. {line}")
+        item_idx += 1
+
+    return "\n".join(normalized).strip()
+
+
 def extract_steps(raw_case: dict) -> tuple[list[dict], str]:
     if raw_case.get("custom_steps_separated"):
         steps = []
@@ -1188,18 +1253,34 @@ def extract_steps(raw_case: dict) -> tuple[list[dict], str]:
                 steps.append({"action": action, "expected_result": expected})
         return steps, ""
 
-    step_lines = split_numbered_lines(safe_str(raw_case.get("custom_steps")))
+    step_lines_raw = split_numbered_lines(safe_str(raw_case.get("custom_steps")))
+    step_lines = [strip_leading_connector(line) for line in step_lines_raw if strip_leading_connector(line)]
     expected_lines = split_numbered_lines(safe_str(raw_case.get("custom_expected")))
 
     steps: list[dict] = []
-    for idx, action in enumerate(step_lines):
-        expected = expected_lines[idx] if idx < len(expected_lines) else ""
+    paired_count = 0
+    idx = 0
+    while idx < len(step_lines):
+        action = step_lines[idx]
+        expected = ""
+
+        if idx + 1 < len(step_lines):
+            nxt = step_lines[idx + 1]
+            if looks_like_action_line(action) and looks_like_expected_line(nxt) and not looks_like_action_line(nxt):
+                expected = nxt
+                paired_count += 1
+                idx += 1
+
         steps.append({"action": action, "expected_result": expected})
+        idx += 1
 
-    global_expected = ""
-    if len(expected_lines) > len(step_lines):
-        global_expected = "\n".join(expected_lines[len(step_lines):]).strip()
+    if paired_count == 0:
+        steps = []
+        for i, action in enumerate(step_lines):
+            expected = expected_lines[i] if i < len(expected_lines) else ""
+            steps.append({"action": action, "expected_result": expected})
 
+    global_expected = format_tail_expected_block(expected_lines)
     return steps, normalize_text(global_expected)
 
 
@@ -1219,6 +1300,17 @@ def refactor_case_locally(raw_case: dict) -> dict:
         if action:
             normalized_steps.append({"action": action, "expected_result": expected})
     steps = normalized_steps
+    if steps and global_expected:
+        tail_expected = normalize_expected_result_text(global_expected)
+        tail_expected = merge_original_images(tail_expected, safe_str(raw_case.get("custom_expected")))
+        if tail_expected:
+            existing_last_expected = safe_str(steps[-1].get("expected_result"))
+            if existing_last_expected:
+                combined_lines = split_numbered_lines(f"{existing_last_expected}\n{tail_expected}")
+                steps[-1]["expected_result"] = format_tail_expected_block(combined_lines)
+            else:
+                steps[-1]["expected_result"] = tail_expected
+            global_expected = ""
 
     violations: list[str] = []
     normalized_title = normalize_title(safe_str(raw_case.get("title")))
@@ -1290,6 +1382,8 @@ async def refactor_case_with_agent(raw_case: dict) -> dict:
 
 
 def detect_template(case: dict) -> str:
+    if FORCE_REFACTORED_TEMPLATE_STEPS_SEPARATED:
+        return "steps_separated"
     if case.get("custom_steps_separated") is not None:
         return "steps_separated"
     return "steps"
@@ -1348,6 +1442,57 @@ async def get_case(session: aiohttp.ClientSession, case_id: int) -> dict:
 
 
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1.5, min=2, max=15))
+async def resolve_steps_separated_template_id(session: aiohttp.ClientSession, source_template_id: int | None) -> int | None:
+    global _CACHED_STEPS_SEPARATED_TEMPLATE_ID
+
+    if _CACHED_STEPS_SEPARATED_TEMPLATE_ID is not None:
+        return _CACHED_STEPS_SEPARATED_TEMPLATE_ID
+
+    explicit = safe_int(TESTRAIL_STEPS_SEPARATED_TEMPLATE_ID_RAW)
+    if explicit is not None:
+        _CACHED_STEPS_SEPARATED_TEMPLATE_ID = explicit
+        return _CACHED_STEPS_SEPARATED_TEMPLATE_ID
+
+    section_url = f"{TESTRAIL_URL}/index.php?/api/v2/get_section/{SECTION_ID}"
+    async with session.get(section_url) as r:
+        r.raise_for_status()
+        section_payload = await r.json()
+
+    project_id = section_payload.get("project_id") or TESTRAIL_PROJECT_ID
+    suite_id = section_payload.get("suite_id")
+    if not project_id:
+        project_id = await resolve_project_id_from_suite(session, suite_id)
+    if not project_id:
+        return None
+
+    templates_url = f"{TESTRAIL_URL}/index.php?/api/v2/get_templates/{project_id}"
+    async with session.get(templates_url) as r:
+        if r.status != 200:
+            return None
+        templates_payload = await r.json()
+
+    templates = templates_payload.get("templates", []) if isinstance(templates_payload, dict) else templates_payload
+    if not isinstance(templates, list):
+        return None
+
+    preferred: int | None = None
+    fallback: int | None = None
+    for template in templates:
+        tid = safe_int(template.get("id"))
+        name = safe_str(template.get("name")).lower()
+        if tid is None or not name:
+            continue
+        if "step" in name and "separated" in name:
+            preferred = tid
+            break
+        if source_template_id is not None and tid == source_template_id:
+            fallback = tid
+
+    _CACHED_STEPS_SEPARATED_TEMPLATE_ID = preferred if preferred is not None else fallback
+    return _CACHED_STEPS_SEPARATED_TEMPLATE_ID
+
+
+@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1.5, min=2, max=15))
 async def create_refactored_case(
     session: aiohttp.ClientSession,
     source_case_id: int,
@@ -1356,11 +1501,21 @@ async def create_refactored_case(
     priority_audit: dict | None = None,
 ):
     template = detect_template(raw_case)
-    template_id = raw_case.get("template_id")
+    source_template_id = safe_int(raw_case.get("template_id"))
 
     payload = build_testrail_payload(ai_result, template)
     payload["title"] = f"[AI refactored from C{source_case_id}] {ai_result['title']}"
-    payload["template_id"] = template_id
+    if template == "steps_separated":
+        target_template_id = await resolve_steps_separated_template_id(session, source_template_id)
+        if target_template_id is None:
+            raise ValueError(
+                "Cannot resolve TestRail Steps (separated) template_id. Set TESTRAIL_STEPS_SEPARATED_TEMPLATE_ID in .env."
+            )
+    else:
+        target_template_id = source_template_id
+
+    if target_template_id is not None:
+        payload["template_id"] = target_template_id
     payload["refs"] = build_refs_for_created_case((raw_case.get("refs") or "").strip(), priority_audit or {})
     selected_priority_id = safe_int(ai_result.get("priority_id"))
     if selected_priority_id is None and COPY_SOURCE_PRIORITY:

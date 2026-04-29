@@ -32,8 +32,8 @@ Main file: `Copilot-AI-TestRail.py`.
 
 2. **Clone the repository**
    ```
-   git clone <YOUR_REPOSITORY_URL>
-   cd <PROJECT_FOLDER_NAME>
+   git clone <YOUR_REPOSITORY_URL> (e.g. 'https://github.com/kolesnychek/OpenAI-Testrail-Refactor-Priority-Assistant')
+   cd <PROJECT_FOLDER_NAME> (e.g. 'OpenAI-Testrail-Refactor-Priority-Assistant')
    ```
 
 3. **Create and activate a virtual environment**
@@ -49,7 +49,7 @@ Main file: `Copilot-AI-TestRail.py`.
 
 5. **Create `.env` file:**
    ```
-   cp env.example .env
+   cp .env.example .env
    ```
 
 6. **Fill in `.env` file**
@@ -66,6 +66,12 @@ Main file: `Copilot-AI-TestRail.py`.
    JIRA_BASE_URL=
    JIRA_USER_EMAIL=
    JIRA_API_TOKEN=
+
+   #optional (if only one test case needs to be updated)
+   CASE_IDS=
+   #optional (if the updated test case needs to switch the template to 'Steps')
+   FORCE_REFACTORED_TEMPLATE_STEPS_SEPARATED=yes
+   TESTRAIL_STEPS_SEPARATED_TEMPLATE_ID=2
    ```
 
 7. **Run the script**

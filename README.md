@@ -69,6 +69,7 @@ Main file: `Copilot-AI-TestRail.py`.
 
    #optional (if only one test case needs to be updated)
    CASE_IDS=
+   USE_ALL_CASES_IN_SECTION=no
    #optional (if the updated test case needs to switch the template to 'Steps')
    FORCE_REFACTORED_TEMPLATE_STEPS_SEPARATED=yes
    TESTRAIL_STEPS_SEPARATED_TEMPLATE_ID=2
